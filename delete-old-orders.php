@@ -18,9 +18,11 @@ define('WDOO_DIR', realpath(dirname(__file__)));
 
 class Woo_Delete_Old_Orders
 {
+    var $data_tables;
     //
     function __construct()
     {
+        $this->data_tables = ['woocommerce_order_itemmeta', 'woocommerce_order_items', 'comments', 'postmeta', 'posts'];
         add_action('init', [$this, 'init']);
         add_action('admin_menu', [$this, 'admin_menu']);
         add_action('admin_enqueue_scripts', [$this, 'admin_enqueue_scripts']);
@@ -90,42 +92,46 @@ class Woo_Delete_Old_Orders
         set_time_limit(3600);
         global $wpdb;
         $table = $_GET['table'];
-        $json = [];
-        $tmp = $this->get_ids();
-        $meta_ids = $tmp['meta_ids'];
-        $ids = $tmp['ids'];
-
-        switch ($table)
+        if (in_array($table, $this->data_tables))
         {
-            case 'woocommerce_order_itemmeta':
-                $sql = $wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->prefix}woocommerce_order_itemmeta WHERE order_item_id IN (". $meta_ids. ")", 1);
-                break;
-            case 'woocommerce_order_items':
-                $sql = $wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->prefix}woocommerce_order_items WHERE order_id IN (". $ids. ")", 1);
-                break;
-            case 'comments':
-                $sql = $wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->prefix}comments WHERE comment_type = 'order_note' AND comment_post_ID IN (". $ids. ")", 1);
-                break;
-            case 'postmeta':
-                $sql = $wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->prefix}postmeta WHERE post_id IN (". $ids. ")", 1);
-                break;
-            case 'posts':
-                $sql = $wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->prefix}posts WHERE ID IN (". $ids. ")", 1);
-                break;
+            $json = [];
+            $tmp = $this->get_ids();
+            $meta_ids = $tmp['meta_ids'];
+            $ids = $tmp['ids'];
+            switch ($table)
+            {
+                case 'woocommerce_order_itemmeta':
+                    $sql = $wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->prefix}woocommerce_order_itemmeta WHERE order_item_id IN (". $meta_ids. ")", 1);
+                    break;
+                case 'woocommerce_order_items':
+                    $sql = $wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->prefix}woocommerce_order_items WHERE order_id IN (". $ids. ")", 1);
+                    break;
+                case 'comments':
+                    $sql = $wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->prefix}comments WHERE comment_type = 'order_note' AND comment_post_ID IN (". $ids. ")", 1);
+                    break;
+                case 'postmeta':
+                    $sql = $wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->prefix}postmeta WHERE post_id IN (". $ids. ")", 1);
+                    break;
+                case 'posts':
+                    $sql = $wpdb->prepare("SELECT COUNT(*) FROM {$wpdb->prefix}posts WHERE ID IN (". $ids. ")", 1);
+                    break;
+            }
+            $this->log($sql);
+            $sql = str_replace('SELECT COUNT(*)', 'DELETE', $sql);
+            $result = 0;
+            $result = $wpdb->query($sql);
+            $json['count'] = intval($result);
+            $json['table'] = $table;
         }
-        $this->log($sql);
-        $sql = str_replace('SELECT COUNT(*)', 'DELETE', $sql);
-        $result = 0;
-        $result = $wpdb->query($sql);
-        $json['count'] = intval($result);
-        $json['table'] = $table;
         die(json_encode($json));
     }
     //
     function woo_delete_old_orders()
     {
         global $wpdb;
+        $date = isset($_GET['date']) ? $_GET['date'] : date('Y-m-d');
         $step = intval($_GET['step']);
+        $limit = isset($_GET['limit']) ? intval($_GET['limit']) : 10000;
         if ($step == 0) $step = 1;
 ?>
 <style type="text/css">
@@ -147,9 +153,9 @@ class Woo_Delete_Old_Orders
         <input type="hidden" name="page" value="woo-delete-old-orders" />
         <input type="hidden" name="step" value="2" />
         <p><label for="till-date">Delete orders before the selected date. Date format is YYYY-MM-DD.</label></p>
-        <p><input type="text" id="till-date" name="date" class="datepicker" autocomplete="off" value="<?php echo isset($_GET['date']) ? $_GET['date'] : date('Y-m-d'); ?>" /></p>
+        <p><input type="text" id="till-date" name="date" class="datepicker" autocomplete="off" value="<?php echo esc_attr($date) ?>" /></p>
         <p><label for="limit-users">Limit orders to delete. It helps if you have many orders, and deletion takes too long.</label></p>
-        <p><input type="text" id="limit-users" name="limit" value="<?php echo isset($_GET['limit']) ? intval($_GET['limit']) : 10000; ?>" /></p>
+        <p><input type="text" id="limit-users" name="limit" value="<?php echo intval($limit); ?>" /></p>
     </form>
     <p><input type="button" name="step2" id="step2" class="button button-primary" value="Next step &raquo;" /></p>
 
@@ -225,7 +231,7 @@ endif;
 ?>
 <?php if ($step == 3): ?>
 <?php
-        $tables = ['woocommerce_order_itemmeta', 'woocommerce_order_items', 'comments', 'postmeta', 'posts'];
+        $tables = $this->data_tables;
         $tables = array_reverse($tables);
 ?>
 <div id="step3-progress">
